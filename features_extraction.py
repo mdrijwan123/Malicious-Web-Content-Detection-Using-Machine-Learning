@@ -7,13 +7,17 @@
 
 from bs4 import BeautifulSoup
 import urllib
+import urllib.request
 import bs4
 import re
 import socket
+# if you are using linux use pip install whois
+# If windows use pip install python-whois
 import whois
 from datetime import datetime
 import time
-
+import os
+import requests
 # https://breakingcode.wordpress.com/2010/06/29/google-search-python/
 # Previous package structure was modified. Import statements according to new structure added. Also code modified.
 from googlesearch import search
@@ -24,13 +28,13 @@ import sys
 from patterns import *
 
 # Path of your local server. Different for different OSs.
-LOCALHOST_PATH = "/Library/WebServer/Documents/"
-DIRECTORY_NAME = "Malicious-Web-Content-Detection-Using-Machine-Learning"
+LOCALHOST_PATH = os.getcwd()
 
 
 def having_ip_address(url):
+    host = get_hostname_from_url(url)
     ip_address_pattern = ipv4_pattern + "|" + ipv6_pattern
-    match = re.search(ip_address_pattern, url)
+    match = re.search(ip_address_pattern, host)
     return -1 if match else 1
 
 
@@ -86,9 +90,10 @@ def having_sub_domain(url):
 
 def domain_registration_length(domain):
     expiration_date = domain.expiration_date
+    if isinstance(expiration_date,list):
+        expiration_date = expiration_date[0]
     today = time.strftime('%Y-%m-%d')
     today = datetime.strptime(today, '%Y-%m-%d')
-
     registration_length = 0
     # Some domains do not have expiration dates. This if condition makes sure that the expiration date is used only
     # when it is present.
@@ -230,7 +235,9 @@ def submitting_to_email(soup):
 
 def abnormal_url(domain, url):
     hostname = domain.name
-    match = re.search(hostname, url)
+    match = False
+    if hostname:
+        match = re.search(hostname, url)
     return 1 if match else -1
 
 
@@ -249,6 +256,10 @@ def i_frame(soup):
 def age_of_domain(domain):
     creation_date = domain.creation_date
     expiration_date = domain.expiration_date
+    if isinstance(creation_date,list):
+        creation_date = creation_date[0]
+    if isinstance(expiration_date,list):
+        expiration_date = expiration_date[0]
     ageofdomain = 0
     if expiration_date:
         ageofdomain = abs((expiration_date - creation_date).days)
@@ -258,7 +269,7 @@ def age_of_domain(domain):
 def web_traffic(url):
     try:
         rank = \
-            bs4.BeautifulSoup(urllib.urlopen("http://data.alexa.com/data?cli=10&dat=s&url=" + url).read(), "xml").find(
+            bs4.BeautifulSoup(urllib.request.urlopen("http://data.alexa.com/data?cli=10&dat=s&url=" + url).read(), "xml").find(
                 "REACH")['RANK']
     except TypeError:
         return -1
@@ -312,14 +323,11 @@ def get_hostname_from_url(url):
 
 
 def main(url):
-    with open(LOCALHOST_PATH + DIRECTORY_NAME + '/markup.txt', 'r') as file:
-        soup_string = file.read()
 
-    soup = BeautifulSoup(soup_string, 'html.parser')
-
+    req = requests.get(url)
+    soup = BeautifulSoup(req.text, 'html.parser')
     status = []
     hostname = get_hostname_from_url(url)
-
     status.append(having_ip_address(url))
     status.append(url_length(url))
     status.append(shortening_service(url))
@@ -327,10 +335,13 @@ def main(url):
     status.append(double_slash_redirecting(url))
     status.append(prefix_suffix(hostname))
     status.append(having_sub_domain(url))
-
+    domain = ""
     dns = 1
     try:
-        domain = whois.query(hostname)
+        # if you are using linux use below command
+        # domain = whois.query(hostname)
+        # if you are using windows use
+        domain = whois.whois(hostname)
     except:
         dns = -1
 
